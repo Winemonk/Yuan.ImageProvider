@@ -1,0 +1,6 @@
+@Yuan.ImageProvider_HostAddress = http://localhost:5296
+
+GET {{Yuan.ImageProvider_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
