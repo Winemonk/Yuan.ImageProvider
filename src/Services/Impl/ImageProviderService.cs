@@ -24,7 +24,7 @@ namespace Yuan.ImageProvider.Services.Impl
             _imageCacheService = imageCacheService;
         }
 
-        public async Task<string> GetRandomImageAsync(string? bedId)
+        public async Task<string> GetRandomImageUrlAsync(string? bedId)
         {
             ImageProviderSettings providerSettings = _imageProviderSettings.Value;
             ImageBedSettings bedSettings = GetImageBedSettings(bedId, providerSettings);
@@ -62,6 +62,35 @@ namespace Yuan.ImageProvider.Services.Impl
                 }
             }
             return returnUrl;
+        }
+
+        public async Task<ImageUriInfo> GetRandomImageAsync(string? bedId)
+        {
+            ImageProviderSettings providerSettings = _imageProviderSettings.Value;
+            ImageBedSettings bedSettings = GetImageBedSettings(bedId, providerSettings);
+            string key = Guid.NewGuid().ToString("N");
+            ImageUriInfo imageUrlInfo = new ImageUriInfo
+            {
+                Key = key,
+            };
+            if (providerSettings.EnableLocalCache)
+            {
+                string cachePath = await _imageCacheService.GetImageCacheUri(bedSettings);
+                imageUrlInfo.IsLocal = true;
+                imageUrlInfo.Uri = cachePath;
+            }
+            else if (bedSettings.IsByteResponse)
+            {
+                imageUrlInfo.IsLocal = false;
+                imageUrlInfo.Uri = bedSettings.Url;
+            }
+            else
+            {
+                string imageUrl = await ImageBedUtil.GetImageUriAsync(bedSettings);
+                imageUrlInfo.Uri = imageUrl;
+                imageUrlInfo.IsLocal = false;
+            }
+            return imageUrlInfo;
         }
 
         private static ImageBedSettings GetImageBedSettings(string? bedId, ImageProviderSettings providerSettings)

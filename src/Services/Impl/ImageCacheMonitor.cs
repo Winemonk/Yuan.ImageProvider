@@ -53,6 +53,7 @@ namespace Yuan.ImageProvider.Services.Impl
                     timer.Period = TimeSpan.FromSeconds(newSettings.CacheMonitoredInterval);
                     _logger.LogInformation("缓存监控定时任务周期已更新为：{interval}秒", newSettings.CacheMonitoredInterval);
                 }
+
             });
             if (disposable != null)
             {
@@ -72,6 +73,7 @@ namespace Yuan.ImageProvider.Services.Impl
                 }
             }
         }
+
         private async Task DoWorkAsync(CancellationToken stoppingToken)
         {
             ImageProviderSettings providerSettings = _imageProviderSettings.CurrentValue;
@@ -91,7 +93,7 @@ namespace Yuan.ImageProvider.Services.Impl
                     try
                     {
                         var cacheOptions = new MemoryCacheEntryOptions()
-                            .SetSlidingExpiration(TimeSpan.FromMinutes(10))    // 滑动过期时间
+                            .SetSlidingExpiration(TimeSpan.FromMinutes(60))    // 滑动过期时间
                                                                                //.SetAbsoluteExpiration(TimeSpan.FromHours(1))      // 绝对过期时间
                             .SetPriority(CacheItemPriority.Normal);            // 缓存优先级
                         _memoryCache.Set(bedCacheKey, imageUriQueue, cacheOptions);
@@ -113,6 +115,7 @@ namespace Yuan.ImageProvider.Services.Impl
                         imageUriQueue.Enqueue(cachePath);
                         _logger.LogDebug("添加图床缓存至队列，序号：{index}, 图片地址：{imageUrl}", imageUriQueue.Count, cachePath);
                     }
+                    await Task.Delay(10);
                 }
             });
             if (tasks!= null)
@@ -143,59 +146,80 @@ namespace Yuan.ImageProvider.Services.Impl
 
         private async Task<string> CacheImageAsync(ImageProviderSettings providerSettings, ImageBedSettings bedSettings)
         {
-            string imageUrl;
-            if (bedSettings.IsByteResponse)
+            if (bedSettings.IsLocalDirectory)
             {
-                imageUrl = bedSettings.Url;
+                if (string.IsNullOrEmpty(bedSettings.Url))
+                    throw new ArgumentException($"图床Url为空：{bedSettings.Id}！");
+                if (!Directory.Exists(bedSettings.Url))
+                    throw new ArgumentException($"图床目录不存在{bedSettings.Url}！");
+                string[] imageExtensions = { "*.jpg", "*.jpeg", "*.png", "*.webp" };
+                var imageFiles = imageExtensions
+                    .SelectMany(ext => Directory.GetFiles(bedSettings.Url, ext, SearchOption.AllDirectories))
+                    .ToArray();
+                if (imageFiles.Length == 0)
+                {
+                    throw new ArgumentException($"图床目录下没有图片文件：{bedSettings.Url}！");
+                }
+                Random random = new Random();
+                string randomImage = imageFiles[random.Next(imageFiles.Length)];
+                return randomImage;
             }
             else
             {
-                imageUrl = await ImageBedUtil.GetImageUriAsync(bedSettings);
-            }
-
-            HttpClient client = await ImageBedUtil.GetImageBedHttpClientAsync(bedSettings);
-
-            string? cachePath = providerSettings.LocalCachePath;
-            if (string.IsNullOrEmpty(cachePath))
-            {
-                //cachePath = Path.Combine(
-                //    Environment.GetFolderPath(
-                //        Environment.SpecialFolder.CommonApplicationData,
-                //        Environment.SpecialFolderOption.Create),
-                //    "Yuan/ImageProvider");
-                cachePath = Path.Combine(AppContext.BaseDirectory, "caches");
-            }
-            _logger.LogDebug("缓存根路径：{cachePath}", cachePath);
-            if (providerSettings.CreateCategoryCacheDirectory)
-            {
-                cachePath = Path.Combine(cachePath, bedSettings.Category ?? "未分类");
-            }
-            if (providerSettings.CreateBedCacheDirectory)
-            {
-                cachePath = Path.Combine(cachePath, bedSettings.Id);
-            }
-            if (!Directory.Exists(cachePath))
-            {
-                Directory.CreateDirectory(cachePath);
-            }
-            HttpResponseMessage httpResponseMessage = await client.GetAsync(imageUrl);
-            using Stream stream = await httpResponseMessage.Content.ReadAsStreamAsync();
-            string md5 = await CryptographyUtil.CalculateStreamMD5Async(stream);
-            cachePath = Path.Combine(cachePath, md5 + ".png");
-            if (!File.Exists(cachePath))
-            {
-                using FileStream fileStream = new FileStream(cachePath, FileMode.Create, FileAccess.Write);
-                byte[] buffer = new byte[1024 * 80];
-                int bytesRead;
-                while ((bytesRead = await stream.ReadAsync(buffer)) > 0)
+                string imageUrl;
+                if (bedSettings.IsByteResponse)
                 {
-                    fileStream.Write(buffer, 0, bytesRead);
+                    imageUrl = bedSettings.Url;
                 }
-                fileStream.Flush();
-                _logger.LogDebug("缓存图床：‘{bedId}’的图片：‘{imageUrl}’到‘{cachePath}’", bedSettings.Id, imageUrl, cachePath);
+                else
+                {
+                    imageUrl = await ImageBedUtil.GetImageUriAsync(bedSettings);
+                }
+
+                HttpClient client = await ImageBedUtil.GetImageBedHttpClientAsync(bedSettings);
+
+                string? cachePath = providerSettings.LocalCachePath;
+                if (string.IsNullOrEmpty(cachePath))
+                {
+                    //cachePath = Path.Combine(
+                    //    Environment.GetFolderPath(
+                    //        Environment.SpecialFolder.CommonApplicationData,
+                    //        Environment.SpecialFolderOption.Create),
+                    //    "Yuan/ImageProvider");
+                    cachePath = Path.Combine(AppContext.BaseDirectory, "caches");
+                }
+                _logger.LogDebug("缓存根路径：{cachePath}", cachePath);
+                if (providerSettings.CreateCategoryCacheDirectory)
+                {
+                    cachePath = Path.Combine(cachePath, bedSettings.Category ?? "未分类");
+                }
+                if (providerSettings.CreateBedCacheDirectory)
+                {
+                    cachePath = Path.Combine(cachePath, bedSettings.Id);
+                }
+                if (!Directory.Exists(cachePath))
+                {
+                    Directory.CreateDirectory(cachePath);
+                }
+                HttpResponseMessage httpResponseMessage = await client.GetAsync(imageUrl);
+                using Stream stream = await httpResponseMessage.Content.ReadAsStreamAsync();
+                string md5 = await CryptographyUtil.CalculateStreamMD5Async(stream);
+                cachePath = Path.Combine(cachePath, md5 + ".jpg");
+                if (!File.Exists(cachePath))
+                {
+                    using FileStream fileStream = new FileStream(cachePath, FileMode.Create, FileAccess.Write);
+                    byte[] buffer = new byte[1024 * 80];
+                    int bytesRead;
+                    while ((bytesRead = await stream.ReadAsync(buffer)) > 0)
+                    {
+                        fileStream.Write(buffer, 0, bytesRead);
+                    }
+                    fileStream.Flush();
+                    _logger.LogDebug("缓存图床：‘{bedId}’的图片：‘{imageUrl}’到‘{cachePath}’", bedSettings.Id, imageUrl, cachePath);
+                }
+                cachePath = cachePath.Replace('\\', '/');
+                return cachePath;
             }
-            cachePath = cachePath.Replace('\\', '/');
-            return cachePath;
         }
     }
 }

@@ -22,13 +22,29 @@ namespace Yuan.ImageProvider.Controllers
         }
 
         [HttpGet("random")]
-        public async Task<IActionResult> GetRandom([FromQuery] string? bedId = null)
+        public async Task<IActionResult> GetRandom([FromQuery] string? type = null, [FromQuery] string? bedId = null)
         {
             try
             {
-                string imageUrl = await _imageProviderService.GetRandomImageAsync(bedId).ConfigureAwait(false);
-                _logger.LogInformation("获取随机图像成功：{url}", imageUrl);
-                return Ok(new { url = imageUrl });
+                if(!string.IsNullOrEmpty(type) && type.Equals("json", StringComparison.OrdinalIgnoreCase))
+                {
+                    string imageUrl = await _imageProviderService.GetRandomImageUrlAsync(bedId).ConfigureAwait(false);
+                    _logger.LogInformation("获取随机图像成功：{url}", imageUrl);
+                    return Ok(new { url = imageUrl });
+                }
+                else
+                {
+                    ImageUriInfo imageUriInfo = await _imageProviderService.GetRandomImageAsync(bedId).ConfigureAwait(false);
+                    _logger.LogInformation("获取随机图像成功：{@imageUriInfo}", imageUriInfo);
+                    if (imageUriInfo.IsLocal)
+                    {
+                        return PhysicalFile(imageUriInfo.Uri, GetMimeType(imageUriInfo.Uri));
+                    }
+                    else
+                    {
+                        return RedirectPermanent(imageUriInfo.Uri);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -42,15 +58,18 @@ namespace Yuan.ImageProvider.Controllers
         {
             try
             {
-                ImageUriInfo imageUrlInfo = await _imageSkipService.GetSkipImageUrlAsync(skipKey).ConfigureAwait(false);
-                _logger.LogInformation("图像跳转：{@imageUrlInfo}", imageUrlInfo);
-                if (imageUrlInfo.IsLocal)
+                ImageUriInfo imageUriInfo = await _imageSkipService.GetSkipImageUrlAsync(skipKey).ConfigureAwait(false);
+                _logger.LogInformation("图像跳转：{@imageUrlInfo}", imageUriInfo);
+                if (imageUriInfo.IsLocal)
                 {
-                    return PhysicalFile(imageUrlInfo.Uri, GetMimeType(imageUrlInfo.Uri));
+                    byte[] imageBytes = System.IO.File.ReadAllBytes(imageUriInfo.Uri);
+                    _logger.LogInformation("获取图像大小：{size}", imageBytes.Length);
+                    return File(imageBytes, "image/jpeg", $"{imageUriInfo.Key}.jpg");
+                    //return PhysicalFile(imageUriInfo.Uri, GetMimeType(imageUriInfo.Uri));
                 }
                 else
                 {
-                    return RedirectPermanent(imageUrlInfo.Uri);
+                    return RedirectPermanent(imageUriInfo.Uri);
                 }
             }
             catch (Exception ex)

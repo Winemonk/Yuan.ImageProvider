@@ -4,6 +4,7 @@ namespace Yuan.ImageProvider.Services
 {
     public interface IImageProviderService
     {
-        Task<string> GetRandomImageAsync(string? bedId);
+        Task<ImageUriInfo> GetRandomImageAsync(string? bedId);
+        Task<string> GetRandomImageUrlAsync(string? bedId);
     }
 }
